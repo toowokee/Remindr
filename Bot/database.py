@@ -107,6 +107,17 @@ def get_reminder(reminder_id: int, user_id: int) -> sqlite3.Row | None:
         ).fetchone()
 
 
+def edit_reminder(reminder_id: int, user_id: int, message: str, due_at: datetime, recur: str | None) -> bool:
+    with _conn() as con:
+        cur = con.execute(
+            """UPDATE reminders
+               SET message = ?, due_at = ?, recur = ?
+               WHERE id = ? AND user_id = ?""",
+            (message, due_at.isoformat(), recur, reminder_id, user_id),
+        )
+        return cur.rowcount > 0
+
+
 def delete_reminder(reminder_id: int, user_id: int) -> bool:
     with _conn() as con:
         cur = con.execute(
