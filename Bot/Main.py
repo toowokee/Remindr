@@ -13,16 +13,15 @@ try:
 except ImportError:
     from backports import zoneinfo
 
+import dateparser
+
 import database
 import errors
 
 load_dotenv()
 log = logging.getLogger(__name__)
 
-BOT_OWNER_ID: int | None = None
-_raw_owner = os.environ.get("BOT_OWNER_ID", "").strip()
-if _raw_owner.isdigit():
-    BOT_OWNER_ID = int(_raw_owner)
+
 
 DURATION_RE = re.compile(r"^(\d+)\s*([mhd])$", re.IGNORECASE)
 UNITS = {"m": "minutes", "h": "hours", "d": "days"}
@@ -33,16 +32,24 @@ SNOOZE_OPTIONS = [("5 min", "5m"), ("15 min", "15m"), ("1 hour", "1h"), ("Tomorr
 TEXT_COMMANDS = {
     ".commands": "Show the list of commands",
     ".christmas": "Countdown to Christmas",
-    ".shutdown": "Shut down the bot (owner only)",
 }
 
 
 def parse_duration(value: str) -> timedelta | None:
     m = DURATION_RE.match(value.strip())
-    if not m:
-        return None
-    n, unit = int(m.group(1)), m.group(2).lower()
-    return timedelta(**{UNITS[unit]: n})
+    if m:
+        n, unit = int(m.group(1)), m.group(2).lower()
+        return timedelta(**{UNITS[unit]: n})
+    
+    dt = dateparser.parse(value, settings={'PREFER_DATES_FROM': 'future'})
+    if dt:
+        now = datetime.now()
+        if dt.tzinfo:
+            now = now.astimezone(dt.tzinfo)
+        if dt > now:
+            return dt - now
+            
+    return None
 
 
 def utcnow() -> datetime:
@@ -101,6 +108,38 @@ def commands_embed(tree: app_commands.CommandTree) -> discord.Embed:
     embed.add_field(name="Text Commands", value="\n".join(text_lines), inline=False)
     embed.set_footer(text=f"{len(slash_lines)} slash commands, {len(text_lines)} text commands")
     return embed
+
+
+class ReminderPaginator(discord.ui.View):
+    def __init__(self, rows: list, user_id: int):
+        super().__init__(timeout=300)
+        self.rows = rows
+        self.user_id = user_id
+        self.page = 0
+        self.max_page = max(0, (len(rows) - 1) // 5)
+        self._update_buttons()
+
+    def _update_buttons(self):
+        self.prev_btn.disabled = self.page == 0
+        self.next_btn.disabled = self.page == self.max_page
+
+    @discord.ui.button(label="Previous", style=discord.ButtonStyle.secondary)
+    async def prev_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("Not your reminders.", ephemeral=True)
+            return
+        self.page -= 1
+        self._update_buttons()
+        await interaction.response.edit_message(embed=reminder_embed(self.rows[self.page*5:(self.page+1)*5]), view=self)
+
+    @discord.ui.button(label="Next", style=discord.ButtonStyle.secondary)
+    async def next_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("Not your reminders.", ephemeral=True)
+            return
+        self.page += 1
+        self._update_buttons()
+        await interaction.response.edit_message(embed=reminder_embed(self.rows[self.page*5:(self.page+1)*5]), view=self)
 
 
 class SnoozeView(discord.ui.View):
@@ -179,14 +218,7 @@ class ReminderBot(discord.Client):
             await message.channel.send(embed=commands_embed(self.tree))
             return
 
-        if content == ".shutdown":
-            if BOT_OWNER_ID is None or message.author.id != BOT_OWNER_ID:
-                return  # silently ignore — don't reveal the command exists
-            log.info("Shutdown requested by owner (user_id=%d)", message.author.id)
-            await message.channel.send("✅ Shutting down. Goodbye!")
-            self._check_reminders.cancel()
-            await self.close()
-            return
+
 
         if content != ".christmas":
             return
@@ -389,7 +421,48 @@ class ReminderBot(discord.Client):
             if not rows:
                 await interaction.response.send_message("No active reminders.", ephemeral=True)
                 return
-            await interaction.response.send_message(embed=reminder_embed(rows), ephemeral=True)
+            if len(rows) > 5:
+                view = ReminderPaginator(rows, interaction.user.id)
+                await interaction.response.send_message(embed=reminder_embed(rows[:5]), view=view, ephemeral=True)
+            else:
+                await interaction.response.send_message(embed=reminder_embed(rows), ephemeral=True)
+
+        @self.tree.command(description="Edit an existing reminder")
+        @app_commands.describe(
+            id="Reminder ID to edit",
+            when="New time (leave blank to keep current)",
+            message="New message (leave blank to keep current)",
+            repeat="New repeat interval (leave blank to keep current)",
+        )
+        async def edit(
+            interaction: discord.Interaction,
+            id: int,
+            when: str | None = None,
+            message: str | None = None,
+            repeat: str | None = None,
+        ) -> None:
+            row = database.get_reminder(id, interaction.user.id)
+            if not row:
+                await interaction.response.send_message(f"No reminder {id} found.", ephemeral=True)
+                return
+
+            new_message = message if message is not None else row["message"]
+            new_recur = repeat if repeat is not None else row["recur"]
+            
+            due_at = datetime.fromisoformat(row["due_at"])
+            if when:
+                delta = parse_duration(when)
+                if not delta:
+                    await interaction.response.send_message("Invalid time.", ephemeral=True)
+                    return
+                due_at = utcnow() + delta
+
+            if new_recur and not parse_duration(new_recur):
+                await interaction.response.send_message("Invalid repeat interval.", ephemeral=True)
+                return
+
+            database.edit_reminder(id, interaction.user.id, new_message, due_at, new_recur)
+            await interaction.response.send_message(f"Reminder {id} updated.", ephemeral=True)
 
         @self.tree.command(description="Delete a reminder by ID")
         @app_commands.describe(id="Reminder ID shown in /reminders")
@@ -443,13 +516,23 @@ class ReminderBot(discord.Client):
         if row["recur"]:
             content += f"\n*(repeats every {row['recur']})*"
 
+        view = SnoozeView(row["id"], row["user_id"])
+
         try:
             user = self.get_user(row["user_id"]) or await self.fetch_user(row["user_id"])
             log.info("Delivering reminder %d to user %d (%s)", row["id"], row["user_id"], user)
-            await user.send(content)
+            await user.send(content, view=view)
             log.info("Reminder %d delivered successfully", row["id"])
         except discord.Forbidden:
             log.warning("Forbidden — user %d has DMs disabled", row["user_id"])
+            if row["guild_id"]:
+                fallback_id = database.get_fallback_channel(row["guild_id"])
+                if fallback_id:
+                    guild = self.get_guild(row["guild_id"])
+                    if guild:
+                        channel = guild.get_channel(fallback_id)
+                        if channel:
+                            await channel.send(f"*(DM failed for <@{row['user_id']}>)*\n{content}", view=view)
         except discord.HTTPException as e:
             log.warning("HTTPException delivering reminder %d: %s", row["id"], e)
         except Exception as e:
