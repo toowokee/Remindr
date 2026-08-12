@@ -8,7 +8,7 @@ Reporting a Vulnerability
 
 If you've found a vulnerability, we would like to know so we can fix it before it is released publicly. Do not open a GitHub issue for a found vulnerability.
 
-Send details to hello@nxrofn.com or through a Discord direct message to nxrofn, including:
+Send details to hello@nxrofn.com or through a Discord direct message to WyaNxro, including:
 
 the website, page or repository where the vulnerability can be observed
 a brief description of the vulnerability
