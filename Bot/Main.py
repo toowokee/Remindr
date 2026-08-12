@@ -27,7 +27,6 @@ DURATION_RE = re.compile(r"^(\d+)\s*([mhd])$", re.IGNORECASE)
 UNITS = {"m": "minutes", "h": "hours", "d": "days"}
 
 MAX_REMINDERS_PER_USER = 25
-SNOOZE_OPTIONS = [("5 min", "5m"), ("15 min", "15m"), ("1 hour", "1h"), ("Tomorrow", "1d")]
 
 TEXT_COMMANDS = {
     ".commands": "Show the list of commands",
@@ -142,49 +141,7 @@ class ReminderPaginator(discord.ui.View):
         await interaction.response.edit_message(embed=reminder_embed(self.rows[self.page*5:(self.page+1)*5]), view=self)
 
 
-class SnoozeView(discord.ui.View):
-    def __init__(self, reminder_id: int, user_id: int) -> None:
-        super().__init__(timeout=300)
-        self.reminder_id = reminder_id
-        self.user_id = user_id
 
-        for label, code in SNOOZE_OPTIONS:
-            btn = discord.ui.Button(label=label, style=discord.ButtonStyle.secondary)
-            btn.callback = self._make_callback(code)
-            self.add_item(btn)
-
-        dismiss = discord.ui.Button(label="Dismiss", style=discord.ButtonStyle.danger)
-        dismiss.callback = self._dismiss
-        self.add_item(dismiss)
-
-    def _make_callback(self, code: str):
-        async def callback(interaction: discord.Interaction) -> None:
-            if interaction.user.id != self.user_id:
-                await interaction.response.send_message("Not your reminder.", ephemeral=True)
-                return
-            delta = parse_duration(code)
-            new_due = utcnow() + delta
-            if database.snooze_reminder(self.reminder_id, self.user_id, new_due):
-                ts = discord.utils.format_dt(new_due.astimezone(dt_timezone.utc), style="R")
-                await interaction.response.edit_message(
-                    content=f"⏰ Snoozed! I'll remind you again {ts}.",
-                    view=None,
-                )
-            else:
-                await interaction.response.send_message(
-                    "Couldn't find that reminder — it may have been deleted.",
-                    ephemeral=True,
-                )
-            self.stop()
-        return callback
-
-    async def _dismiss(self, interaction: discord.Interaction) -> None:
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("Not your reminder.", ephemeral=True)
-            return
-        database.delete_reminder(self.reminder_id, self.user_id)
-        await interaction.response.edit_message(content="✅ Reminder dismissed.", view=None)
-        self.stop()
 
 
 class ReminderBot(discord.Client):
@@ -512,16 +469,25 @@ class ReminderBot(discord.Client):
         log.exception("Error in reminder loop: %s", error)
 
     async def _deliver(self, row: dict) -> None:
-        content = f"<@{row['user_id']}> ⏰ **Reminder:** {row['message']}"
+        ping = f"<@{row['user_id']}>"
+        
+        embed = discord.Embed(
+            title="⏰ Reminder",
+            description=row["message"],
+            color=0x5865F2,
+            timestamp=utcnow()
+        )
+        
+        footer_text = f"Reminder {row['id']}"
         if row["recur"]:
-            content += f"\n*(repeats every {row['recur']})*"
-
-        view = SnoozeView(row["id"], row["user_id"])
+            footer_text += f" • Repeats every {row['recur']}"
+            
+        embed.set_footer(text=footer_text)
 
         try:
             user = self.get_user(row["user_id"]) or await self.fetch_user(row["user_id"])
             log.info("Delivering reminder %d to user %d (%s)", row["id"], row["user_id"], user)
-            await user.send(content, view=view)
+            await user.send(content=ping, embed=embed)
             log.info("Reminder %d delivered successfully", row["id"])
         except discord.Forbidden:
             log.warning("Forbidden — user %d has DMs disabled", row["user_id"])
@@ -532,7 +498,7 @@ class ReminderBot(discord.Client):
                     if guild:
                         channel = guild.get_channel(fallback_id)
                         if channel:
-                            await channel.send(f"*(DM failed for <@{row['user_id']}>)*\n{content}", view=view)
+                            await channel.send(content=f"*(DM failed for <@{row['user_id']}>)* {ping}", embed=embed)
         except discord.HTTPException as e:
             log.warning("HTTPException delivering reminder %d: %s", row["id"], e)
         except Exception as e:
