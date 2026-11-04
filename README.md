@@ -6,11 +6,11 @@
 
 ### Step 1. Git clone repository
 ```
-git clone https://github.com/mishalhossin/Discord-AI-Chatbot
+git clone https://github.com/toowokee/Remindr
 ```
 ### Step 2. Change directory to cloned directory
 ```
-cd Discord-AI-Chatbot
+cd Remindr
 ```
 ### Step 3. Install requirements
 ```
