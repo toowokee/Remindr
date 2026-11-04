@@ -1,7 +1,17 @@
 # Remindr
 
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+</details>
 
-This project is a Discord reminder bot built to help users create, manage, and receive reminders directly within Discord. It provides a simple and reliable way to keep track of tasks, events, and deadlines without leaving the server.
+# Installation steps  🚩
 
-Read the [Contributing Guide](https://pythondiscord.com/pages/contributing/bot/) on the Python Discord website if you're interested in helping out.
+### Step 1. 🎬 Git clone repository
+```
+git clone https://github.com/mishalhossin/Discord-AI-Chatbot
+```
+### Step 2. 📁 Changing directory to cloned directory
+```
+cd Discord-AI-Chatbot
+```
+### Step 3. 💾 Install requirements
+```
+python3.10 -m pip install -r requirements.txt
