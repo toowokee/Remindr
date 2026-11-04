@@ -1,8 +1,5 @@
 # Remindr
 
-<details>
-<summary>Installation steps</summary>
-
 ### Step 1. Git clone repository
 ```bash
 git clone https://github.com/toowokee/Remindr
