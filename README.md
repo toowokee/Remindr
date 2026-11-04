@@ -19,8 +19,6 @@ python3.10 -m pip install -r requirements.txt
 ### Step 4. Get a Discord bot token and enable intents from [HERE](https://discord.com/developers/applications)
 ```
 
-<details>
-
 ##### Select [application](https://discord.com/developers/applications)
 
  ### Step 5. Rename `example.env` to `.env` and put the Discord bot token and your Groq key. It will look like this:
