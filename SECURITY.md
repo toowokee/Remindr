@@ -2,13 +2,13 @@
 
 Security Notice
 
-This is the security notice for this repository, The notice explains how vulnerabilities should be reported.
+This is the security notice for this repository. It explains how to report vulnerabilities.
 
 Reporting a Vulnerability
 
 If you've found a vulnerability, we would like to know so we can fix it before it is released publicly. Do not open a GitHub issue for a found vulnerability.
 
-Send details to hello@nxrofn.com or through a Discord direct message to WyaNxro, including:
+Send details to Bostondwhite@gmail.com or through a Discord direct message to Toowoke, including:
 
 the website, page or repository where the vulnerability can be observed
 a brief description of the vulnerability
