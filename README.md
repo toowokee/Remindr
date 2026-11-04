@@ -26,4 +26,4 @@ python3.10 -m pip install -r requirements.txt
 DISCORD_TOKEN=YOUR_DISCORD_BOT_TOKEN
 ```
 ### Step 6. Run the bot
-```
+
