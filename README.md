@@ -15,6 +15,7 @@ cd Remindr
 ### Step 3. Install requirements
 ```
 python3.10 -m pip install -r requirements.txt
+```
 
 ### Step 4. Get a Discord bot token and enable intents from [HERE](https://discord.com/developers/applications)
 ```
